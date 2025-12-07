@@ -26,20 +26,11 @@ int __sys_memmap(struct krnl_t *krnl, uint32_t pid, struct sc_regs* regs)
 {
    int memop = regs->a1;
    BYTE value;
-   struct pcb_t *caller = NULL;
+   
    /* TODO THIS DUMMY CREATE EMPTY PROC TO AVOID COMPILER NOTIFY 
     *      need to be eliminated
 	*/
-    struct queue_t *running_list = krnl->running_list;
-    if (running_list != NULL) {
-        for (int i = 0; i < running_list->size; i++) {
-            struct pcb_t *proc = running_list->proc[i];
-            if (proc != NULL && proc->pid == pid) {
-                caller = proc;
-                break;
-            }
-        }
-    }
+   struct pcb_t *caller = NULL;
 
    /*
     * @bksysnet: Please note in the dual spacing design
@@ -49,14 +40,27 @@ int __sys_memmap(struct krnl_t *krnl, uint32_t pid, struct sc_regs* regs)
    /* TODO: Traverse proclist to terminate the proc
     *       stcmp to check the process match proc_name
     */
-//	struct queue_t *running_list = krnl->running_list;
+
+	struct queue_t *running_list = krnl->running_list;
+    int i;
 
     /* TODO Maching and marking the process */
     /* user process are not allowed to access directly pcb in kernel space of syscall */
     //....
-   if (caller == NULL) {
-        return -1;   
+    if(running_list != NULL){
+        for(int i = 0; i< running_list->size; i++){
+            struct pcb_t  *proc = running_list->proc[i];
+            if(proc != NULL && proc->pid == pid){
+                caller = proc;
+                break;
+            }
+        }
     }
+
+    if(caller == NULL){
+        return -1;
+    }
+
 
    switch (memop) {
    case SYSMEM_MAP_OP:
