@@ -64,7 +64,6 @@ static void * cpu_routine(void * args) {
 
         if (proc && proc->pc == proc->code->size) {
             printf("\tCPU %d: Processed %2d has finished\n", id, proc->pid);
-            free(proc);
             proc = NULL;
             time_left = 0;
         }
@@ -116,14 +115,17 @@ static void * ld_routine(void * args) {
     printf("ld_routine\n");
 
     while (i < num_processes) {
-        /* Chờ đến đúng start_time của process thứ i */
         while (current_time() < ld_processes.start_time[i]) {
             next_slot(timer_id);
         }
 
-        /* Load process từ file mô tả */
         struct pcb_t * proc = load(ld_processes.path[i]);
+#ifdef MM_PAGING
         struct krnl_t * krnl = proc->krnl = &os;
+#else
+        proc->krnl = &os;
+#endif
+
 
 #ifdef MLQ_SCHED
         proc->prio = ld_processes.prio[i];

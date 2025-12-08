@@ -8,7 +8,7 @@
  * for the sole purpose of studying while attending the course CO2018.
  */
 
-//#ifdef MM_PAGING
+#ifdef MM_PAGING
 /*
  * PAGING based Memory Management
  * Virtual memory module mm/mm-vm.c
@@ -97,6 +97,7 @@ int validate_overlap_vm_area(struct pcb_t *caller, int vmaid, addr_t vmastart, a
   }
 
   struct vm_area_struct *vma = caller->krnl->mm->mmap;
+
   if (vma == NULL)
   {
     return -1;
@@ -163,4 +164,4 @@ int inc_vma_limit(struct pcb_t *caller, int vmaid, addr_t inc_sz)
   return 0;
 }
 
-// #endif
+#endif

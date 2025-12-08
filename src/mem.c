@@ -15,7 +15,7 @@ static struct {
 			// page.
 } _mem_stat [NUM_PAGES];
 
-static pthread_mutex_t mem_lock;
+static pthread_mutex_t mem_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void init_mem(void) {
 	memset(_mem_stat, 0, sizeof(*_mem_stat) * NUM_PAGES);

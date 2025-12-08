@@ -12,6 +12,7 @@
  * PAGING based Memory Management
  * Memory management unit mm/mm.c
  */
+#ifdef MM_PAGING
 
 #include "mm64.h"
 #include <stdlib.h>
@@ -203,28 +204,37 @@ int pte_set_fpn(struct pcb_t *caller, addr_t pgn, addr_t fpn)
  **/
 uint32_t pte_get_entry(struct pcb_t *caller, addr_t pgn)
 {
-  struct krnl_t *krnl = caller->krnl;
-  struct mm_struct *mm = krnl->mm;
+    if (caller == NULL || caller->krnl == NULL || caller->krnl->mm == NULL)
+        return 0;
 
-  uint32_t pte = 0;
-  addr_t pgd = 0;
-  addr_t p4d = 0;
-  addr_t pud = 0;
-  addr_t pmd = 0;
-  addr_t pt  = 0;
+    struct krnl_t *krnl = caller->krnl;
+    struct mm_struct *mm = krnl->mm;
 
-  get_pd_from_pagenum(pgn, &pgd, &p4d, &pud, &pmd, &pt);
+    if (mm->pgd == NULL || mm->p4d == NULL || mm->pud == NULL ||
+        mm->pmd == NULL || mm->pt == NULL)
+        return 0;
 
-  /* Nếu bất kỳ mức nào chưa được set thì coi như chưa map */
-  if (mm->pgd[pgd] == 0) return 0;
-  if (mm->p4d[p4d] == 0) return 0;
-  if (mm->pud[pud] == 0) return 0;
-  if (mm->pmd[pmd] == 0) return 0;
+    uint32_t pte = 0;
+    addr_t pgd = 0;
+    addr_t p4d = 0;
+    addr_t pud = 0;
+    addr_t pmd = 0;
+    addr_t pt  = 0;
 
-  pte = mm->pt[pt];
+    get_pd_from_pagenum(pgn, &pgd, &p4d, &pud, &pmd, &pt);
 
-  return pte;
+    if (pgd >= 512 || p4d >= 512 || pud >= 512 || pmd >= 512 || pt >= 512)
+        return 0;
+
+    if (mm->pgd[pgd] == 0) return 0;
+    if (mm->p4d[p4d] == 0) return 0;
+    if (mm->pud[pud] == 0) return 0;
+    if (mm->pmd[pmd] == 0) return 0;
+
+    pte = mm->pt[pt];
+    return pte;
 }
+
 
 /* Set PTE page table entry
  * @caller : caller
@@ -661,3 +671,5 @@ int print_pgtbl(struct pcb_t *caller, addr_t start, addr_t end)
 
 
 #endif  //def MM64
+
+#endif /* MM_PAGING */
