@@ -3,6 +3,7 @@
 #include "sched.h"
 #include "loader.h"
 #include "mm.h"
+#include "os-cfg.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +14,8 @@ static int time_slot;
 static int num_cpus;
 static int done = 0;
 static struct krnl_t os;
+
+int runtime_paging = 0;   // 0 = non-paging, 1 = paging
 
 #ifdef MM_PAGING
 static int memramsz;
@@ -64,7 +67,6 @@ static void * cpu_routine(void * args) {
 
         if (proc && proc->pc == proc->code->size) {
             printf("\tCPU %d: Processed %2d has finished\n", id, proc->pid);
-            free(proc);
             proc = NULL;
             time_left = 0;
         }
@@ -102,41 +104,45 @@ static void * cpu_routine(void * args) {
  * Loader routine
  *---------------------------------------------------------*/
 static void * ld_routine(void * args) {
+    struct timer_id_t *timer_id;
+
 #ifdef MM_PAGING
     struct mmpaging_ld_args *pargs = (struct mmpaging_ld_args *)args;
-    struct timer_id_t      *timer_id     = pargs->timer_id;
+    timer_id = pargs->timer_id;
     struct memphy_struct   *mram         = pargs->mram;
     struct memphy_struct  **mswp         = pargs->mswp;
     struct memphy_struct   *active_mswp  = pargs->active_mswp;
 #else
-    struct timer_id_t * timer_id = (struct timer_id_t*)args;
+    timer_id = (struct timer_id_t*)args;
 #endif
 
     int i = 0;
     printf("ld_routine\n");
 
     while (i < num_processes) {
-        /* Chờ đến đúng start_time của process thứ i */
         while (current_time() < ld_processes.start_time[i]) {
             next_slot(timer_id);
         }
 
-        /* Load process từ file mô tả */
         struct pcb_t * proc = load(ld_processes.path[i]);
-        struct krnl_t * krnl = proc->krnl = &os;
+        proc->krnl = &os;
 
 #ifdef MLQ_SCHED
         proc->prio = ld_processes.prio[i];
 #endif
 
 #ifdef MM_PAGING
-        krnl->mm = malloc(sizeof(struct mm_struct));
-        init_mm(krnl->mm, proc);
+        if (runtime_paging) {
+            struct krnl_t * krnl = proc->krnl;
 
-        krnl->mram           = mram;
-        krnl->mswp           = mswp;
-        krnl->active_mswp    = active_mswp;
-        krnl->active_mswp_id = 0;
+            krnl->mm = malloc(sizeof(struct mm_struct));
+            init_mm(krnl->mm, proc);
+
+            krnl->mram           = mram;
+            krnl->mswp           = mswp;
+            krnl->active_mswp    = active_mswp;
+            krnl->active_mswp_id = 0;
+        }
 #endif
 
 #ifdef MLQ_SCHED
@@ -207,10 +213,13 @@ static void read_config(const char * path) {
                    &memswpsz[3]);
 
     if (r == 5) {
+        runtime_paging = 1;
+
         for (i = 5; i < PAGING_MAX_MMSWP; i++) {
             memswpsz[i] = 0;
         }
     } else {
+        runtime_paging = 0;
 
         char proc[100] = {0};
 
@@ -323,23 +332,30 @@ int main(int argc, char * argv[]) {
     struct memphy_struct mram;
     struct memphy_struct mswp[PAGING_MAX_MMSWP];
 
-    /* Create MEM RAM */
-    init_memphy(&mram, memramsz, rdmflag);
-
-    /* Create all MEM SWAP */
-    int sit;
-    for (sit = 0; sit < PAGING_MAX_MMSWP; sit++)
-        init_memphy(&mswp[sit], memswpsz[sit], rdmflag);
-
     /* In Paging mode, it needs passing the system mem to each PCB through loader*/
     struct mmpaging_ld_args *mm_ld_args =
         malloc(sizeof(struct mmpaging_ld_args));
 
-    mm_ld_args->timer_id       = ld_event;
-    mm_ld_args->mram           = (struct memphy_struct *) &mram;
-    mm_ld_args->mswp           = (struct memphy_struct**) &mswp;
-    mm_ld_args->active_mswp    = (struct memphy_struct *) &mswp[0];
-    mm_ld_args->active_mswp_id = 0;
+    mm_ld_args->timer_id = ld_event;
+
+    if (runtime_paging) {
+        /* Chỉ init RAM/SWAP khi đang ở paging mode */
+        init_memphy(&mram, memramsz, rdmflag);
+
+        int sit;
+        for (sit = 0; sit < PAGING_MAX_MMSWP; sit++)
+            init_memphy(&mswp[sit], memswpsz[sit], rdmflag);
+
+        mm_ld_args->mram           = &mram;
+        mm_ld_args->mswp           = (struct memphy_struct**)&mswp;
+        mm_ld_args->active_mswp    = &mswp[0];
+        mm_ld_args->active_mswp_id = 0;
+    } else {
+        mm_ld_args->mram           = NULL;
+        mm_ld_args->mswp           = NULL;
+        mm_ld_args->active_mswp    = NULL;
+        mm_ld_args->active_mswp_id = -1;
+    }
 #endif
 
     /* Init scheduler */

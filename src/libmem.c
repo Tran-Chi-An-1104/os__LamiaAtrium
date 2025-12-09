@@ -8,7 +8,7 @@
  * for the sole purpose of studying while attending the course CO2018.
  */
 
-// #ifdef MM_PAGING
+#ifdef MM_PAGING
 /*
  * System Library
  * Memory Module Library libmem.c 
@@ -69,60 +69,59 @@ struct vm_rg_struct *get_symrg_byid(struct mm_struct *mm, int rgid)
  */
 int __alloc(struct pcb_t *caller, int vmaid, int rgid, addr_t size, addr_t *alloc_addr)
 {
-  /*Allocate at the toproof */
+  /* Allocate at the top roof */
   pthread_mutex_lock(&mmvm_lock);
+
   struct vm_rg_struct rgnode;
-  struct vm_area_struct *cur_vma = get_vma_by_num(caller->krnl->mm, vmaid);
-  int inc_sz=0;
+  int inc_sz = 0;   
 
   if (get_free_vmrg_area(caller, vmaid, size, &rgnode) == 0)
   {
     caller->krnl->mm->symrgtbl[rgid].rg_start = rgnode.rg_start;
-    caller->krnl->mm->symrgtbl[rgid].rg_end = rgnode.rg_end;
- 
+    caller->krnl->mm->symrgtbl[rgid].rg_end   = rgnode.rg_end;
+
     *alloc_addr = rgnode.rg_start;
 
     pthread_mutex_unlock(&mmvm_lock);
     return 0;
   }
 
-  /* TODO get_free_vmrg_area FAILED handle the region management (Fig.6)*/
+  if (caller == NULL || caller->krnl == NULL || caller->krnl->mm == NULL) {
+    pthread_mutex_unlock(&mmvm_lock);
+    return -1;
+  }
 
-  /*Attempt to increate limit to get space */
+  struct vm_area_struct *cur_vma = get_vma_by_num(caller->krnl->mm, vmaid);
+  if (cur_vma == NULL) {
+    pthread_mutex_unlock(&mmvm_lock);
+    return -1;
+  }
+
+  addr_t old_sbrk = cur_vma->sbrk;
+
 #ifdef MM64
-  inc_sz = (uint32_t)(size/(int)PAGING64_PAGESZ);
-  inc_sz = inc_sz + 1;
+  inc_sz = size;
 #else
   inc_sz = PAGING_PAGE_ALIGNSZ(size);
 #endif
-  int old_sbrk;
-  inc_sz = inc_sz + 1;
 
-  old_sbrk = cur_vma->sbrk;
-
-  /* TODO INCREASE THE LIMIT
-   * SYSCALL 1 sys_memmap
-   */
   struct sc_regs regs;
   regs.a1 = SYSMEM_INC_OP;
   regs.a2 = vmaid;
-#ifdef MM64
-  regs.a3 = size;
-#else
-  regs.a3 = PAGING_PAGE_ALIGNSZ(size);
-#endif  
-  syscall(caller->krnl, caller->pid, 17, &regs); /* SYSCALL 17 sys_memmap */
+  regs.a3 = inc_sz;
 
-  /*Successful increase limit */
+  // SYSCALL 17: sys_memmap
+  syscall(caller->krnl, caller->pid, 17, &regs);
+
   caller->krnl->mm->symrgtbl[rgid].rg_start = old_sbrk;
-  caller->krnl->mm->symrgtbl[rgid].rg_end = old_sbrk + size;
+  caller->krnl->mm->symrgtbl[rgid].rg_end   = old_sbrk + size;
 
   *alloc_addr = old_sbrk;
 
   pthread_mutex_unlock(&mmvm_lock);
   return 0;
-
 }
+
 
 /*__free - remove a region memory
  *@caller: caller
@@ -422,28 +421,38 @@ int libwrite(
 int free_pcb_memph(struct pcb_t *caller)
 {
   pthread_mutex_lock(&mmvm_lock);
-  int pagenum, fpn;
-  uint32_t pte;
 
-  for (pagenum = 0; pagenum < PAGING_MAX_PGN; pagenum++)
+  struct mm_struct *mm = caller->krnl->mm;
+  struct pgn_t *node = mm->fifo_pgn;
+
+  while (node != NULL)
   {
-    pte = caller->krnl->mm->pgd[pagenum];
+    addr_t pgn = node->pgn;
+    uint32_t pte = pte_get_entry(caller, pgn);
 
     if (PAGING_PAGE_PRESENT(pte))
     {
-      fpn = PAGING_FPN(pte);
-      MEMPHY_put_freefp(caller->krnl->mram, fpn);
+      if (!PAGING_PTE_SWP(pte)) {
+        addr_t fpn = PAGING_FPN(pte);
+        MEMPHY_put_freefp(caller->krnl->mram, fpn);
+      } 
+      else {
+        addr_t swp_off = PAGING_SWP(pte);
+        MEMPHY_put_freefp(caller->krnl->active_mswp, swp_off);
+      }
     }
-    else
-    {
-      fpn = PAGING_SWP(pte);
-      MEMPHY_put_freefp(caller->krnl->active_mswp, fpn);
-    }
+
+    struct pgn_t *tmp = node;
+    node = node->pg_next;
+    free(tmp);
   }
+
+  mm->fifo_pgn = NULL;
 
   pthread_mutex_unlock(&mmvm_lock);
   return 0;
 }
+
 
 
 /*find_victim_page - find victim page
@@ -455,24 +464,30 @@ int find_victim_page(struct mm_struct *mm, addr_t *retpgn)
 {
   struct pgn_t *pg = mm->fifo_pgn;
 
-  /* TODO: Implement the theorical mechanism to find the victim page */
   if (!pg)
-  {
-    return -1;
+    return -1; 
+
+  if (pg->pg_next == NULL) {
+    *retpgn = pg->pgn;
+    mm->fifo_pgn = NULL;  
+    free(pg);
+    return 0;
   }
+
   struct pgn_t *prev = NULL;
-  while (pg->pg_next)
+  while (pg->pg_next != NULL)
   {
     prev = pg;
     pg = pg->pg_next;
   }
-  *retpgn = pg->pgn;
-  prev->pg_next = NULL;
 
+  *retpgn = pg->pgn;
+  prev->pg_next = NULL;   
   free(pg);
 
   return 0;
 }
+
 
 /*get_free_vmrg_area - get a free vm region
  *@caller: caller
@@ -483,7 +498,11 @@ int find_victim_page(struct mm_struct *mm, addr_t *retpgn)
 int get_free_vmrg_area(struct pcb_t *caller, int vmaid, int size, struct vm_rg_struct *newrg)
 {
   struct vm_area_struct *cur_vma = get_vma_by_num(caller->krnl->mm, vmaid);
-
+  
+  if (cur_vma == NULL) {
+    return -1;
+  }
+  
   struct vm_rg_struct *rgit = cur_vma->vm_freerg_list;
 
   if (rgit == NULL)
@@ -540,4 +559,4 @@ int get_free_vmrg_area(struct pcb_t *caller, int vmaid, int size, struct vm_rg_s
   return 0;
 }
 
-// #endif
+#endif

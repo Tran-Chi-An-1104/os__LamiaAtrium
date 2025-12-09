@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 
-#define MM_PAGING
+//#define MM_PAGING
 #define PAGING_MAX_MMSWP 4 /* max number of supported swapped space */
 #define PAGING_MAX_SYMTBL_SZ 30
 

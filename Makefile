@@ -9,7 +9,8 @@ CC = gcc
 DEBUG = -g
 
 #CFLAGS = -Wall -c $(DEBUG) -pthread -DMLQ_SCHED
-CFLAGS = -Wall -c $(DEBUG) -pthread -DMLQ_SCHED -DMM_PAGING
+CFLAGS = -Wall -c $(DEBUG) -pthread -DMLQ_SCHED -DMM_PAGING -DMM64
+
 
 LFLAGS = -Wall $(DEBUG)
 

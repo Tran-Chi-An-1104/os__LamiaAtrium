@@ -39,6 +39,7 @@ struct pcb_t * load(const char * path) {
 	avail_pid++;
 	proc->page_table =
 		(struct page_table_t*)malloc(sizeof(struct page_table_t));
+	memset(proc->page_table, 0, sizeof(struct page_table_t));
 	proc->bp = PAGE_SIZE;
 	proc->pc = 0;
 

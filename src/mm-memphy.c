@@ -8,7 +8,7 @@
  * for the sole purpose of studying while attending the course CO2018.
  */
 
-// #ifdef MM_PAGING
+#ifdef MM_PAGING
 /*
  * PAGING based Memory Management
  * Memory physical module mm/mm-memphy.c
@@ -152,24 +152,30 @@ int MEMPHY_format(struct memphy_struct *mp, int pagesz)
 
 int MEMPHY_get_freefp(struct memphy_struct *mp, addr_t *retfpn)
 {
-   pthread_mutex_lock(&mp->lock); // LOCKED
-   struct framephy_struct *fp = mp->free_fp_list;
+    if (mp == NULL || retfpn == NULL) {
+        return -1;
+    }
 
-   if (fp == NULL){
-      pthread_mutex_unlock(&mp->lock); //UNLOCKED
-      return -1;
-   }
-   *retfpn = fp->fpn;
-   mp->free_fp_list = fp->fp_next;
+    pthread_mutex_lock(&mp->lock); // LOCKED
 
-   /* MEMPHY is it   eratively used up until its exhausted
-    * No garbage collector acting then it not been released
-    */
-   free(fp);
-   pthread_mutex_unlock(&mp->lock); //UNLOCKED
+    struct framephy_struct *fp = mp->free_fp_list;
 
-   return 0;
+    if (fp == NULL) {
+        *retfpn = (addr_t)-1;      
+        pthread_mutex_unlock(&mp->lock); // UNLOCKED
+        return -1;
+    }
+
+    *retfpn = fp->fpn;
+    mp->free_fp_list = fp->fp_next;
+
+    free(fp);
+
+    pthread_mutex_unlock(&mp->lock); // UNLOCKED
+
+    return 0;   // OK
 }
+
 
 int MEMPHY_dump(struct memphy_struct *mp)
 {
@@ -181,7 +187,7 @@ int MEMPHY_dump(struct memphy_struct *mp)
    int count = 0;
 
    while (fp != NULL) {
-      printf("%ld ", fp->fpn);
+      
       fp = fp->fp_next;
       count++;
    }
@@ -224,4 +230,4 @@ int init_memphy(struct memphy_struct *mp, addr_t max_size, int randomflg)
    return 0;
 }
 
-// #endif
+#endif
